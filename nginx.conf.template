@@ -1,74 +1,55 @@
-user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
+events { worker_connections 1024; }
 
-events {
-    worker_connections 1024;
-}
 
 http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
+upstream primary_backend {
+server $PRIMARY_HOST max_fails=1 fail_timeout=3s;
+server $SECONDARY_HOST backup max_fails=1 fail_timeout=3s;
+}
 
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for" '
-                    'upstream: $upstream_addr';
 
-    access_log /var/log/nginx/access.log main;
+map $upstream_http_x_app_pool $app_pool_header {
+default $upstream_http_x_app_pool;
+}
 
-    sendfile on;
-    keepalive_timeout 65;
 
-    # Upstream configuration for Blue/Green deployment
-    upstream app_backend {
-        # Active pool configuration based on ACTIVE_POOL env variable
-        # If ACTIVE_POOL=blue, blue is primary, green is backup
-        # If ACTIVE_POOL=green, green is primary, blue is backup
-        
-        server app_${ACTIVE_POOL}:${PORT} max_fails=2 fail_timeout=5s;
-        server app_${BACKUP_POOL}:${PORT} backup max_fails=2 fail_timeout=5s;
-    }
+server {
+listen 80;
 
-    server {
-        listen 80;
-        server_name localhost;
 
-        # Proxy timeouts - tight for fast failover
-        proxy_connect_timeout 2s;
-        proxy_send_timeout 3s;
-        proxy_read_timeout 3s;
-        
-        # Retry configuration
-        proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
-        proxy_next_upstream_tries 2;
-        proxy_next_upstream_timeout 5s;
+location / {
+proxy_pass http://primary_backend;
+proxy_next_upstream error timeout http_502 http_503 http_504 http_5xx;
+proxy_connect_timeout 2s;
+proxy_send_timeout 5s;
+proxy_read_timeout 5s;
 
-        # Preserve original headers
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
 
-        location / {
-            proxy_pass http://app_backend;
-            
-            # Pass through application headers (X-App-Pool, X-Release-Id)
-            proxy_pass_request_headers on;
-            
-            # Add upstream address for debugging
-            add_header X-Upstream-Addr $upstream_addr always;
-        }
+# preserve upstream headers
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Health check endpoint
-        location /healthz {
-            proxy_pass http://app_backend/healthz;
-        }
 
-        # Version endpoint
-        location /version {
-            proxy_pass http://app_backend/version;
-        }
-    }
+# pass through app-provided headers unchanged
+proxy_pass_header X-App-Pool;
+proxy_pass_header X-Release-Id;
+}
+
+
+location = /version {
+proxy_pass http://primary_backend/version;
+proxy_next_upstream error timeout http_502 http_503 http_504 http_5xx;
+proxy_connect_timeout 2s;
+proxy_send_timeout 5s;
+proxy_read_timeout 5s;
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_pass_header X-App-Pool;
+proxy_pass_header X-Release-Id;
+}
+}
 }
