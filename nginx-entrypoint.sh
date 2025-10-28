@@ -21,8 +21,7 @@ fi
 
 
 # Populate template
-envsubst '\$PRIMARY_HOST \$SECONDARY_HOST' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/conf.d/default.conf
-
+envsubst '$PRIMARY_HOST $SECONDARY_HOST' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
 # Ensure permissions
 chown -R nginx:nginx /var/cache/nginx /var/run
