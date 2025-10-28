@@ -46,13 +46,17 @@ services:
     ports:
       - "${NGINX_PORT:-8080}:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+       environment:
+      - ACTIVE_POOL=${ACTIVE_POOL}
+      - BACKUP_POOL=${BACKUP_POOL:-green}
+      - PORT=${PORT:-3000}
     networks:
       - app_network
     depends_on:
       - app_blue
       - app_green
-    command: /bin/sh -c "nginx -g 'daemon off;'"
+      command: /bin/sh -c "envsubst '\$ACTIVE_POOL \$BACKUP_POOL \$PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
 
 networks:
   app_network:
