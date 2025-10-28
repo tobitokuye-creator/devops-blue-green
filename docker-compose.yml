@@ -48,7 +48,7 @@ services:
     volumes:
       - ./nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx-entrypoint.sh:/nginx-entrypoint.sh:ro
-       environment:
+    environment:
       - ACTIVE_POOL=${ACTIVE_POOL}
       - BACKUP_POOL=${BACKUP_POOL:-green}
       - PORT=${PORT:-3000}
@@ -57,7 +57,7 @@ services:
     depends_on:
       - app_blue
       - app_green
-      command: /bin/sh -c "envsubst '\$ACTIVE_POOL \$BACKUP_POOL \$PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    command: /bin/sh -c "envsubst '\$ACTIVE_POOL \$BACKUP_POOL \$PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
 
 networks:
   app_network:
