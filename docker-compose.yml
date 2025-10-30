@@ -1,8 +1,10 @@
-version: "3.8"
+version: '3.8'
 
 services:
+  # Blue Application
   app_blue:
     image: ${BLUE_IMAGE}
+    container_name: app_blue
     environment:
       - APP_POOL=blue
       - RELEASE_ID=${RELEASE_ID_BLUE}
@@ -11,9 +13,17 @@ services:
       - "${BLUE_PORT:-8081}:${PORT:-3000}"
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${PORT:-3000}/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
+  # Green Application
   app_green:
     image: ${GREEN_IMAGE}
+    container_name: app_green
     environment:
       - APP_POOL=green
       - RELEASE_ID=${RELEASE_ID_GREEN}
@@ -22,43 +32,27 @@ services:
       - "${GREEN_PORT:-8082}:${PORT:-3000}"
     networks:
       - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${PORT:-3000}/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
+  # Nginx Load Balancer
   nginx:
     image: nginx:alpine
+    container_name: nginx_lb
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx-entrypoint.sh:/docker-entrypoint.d/nginx-entrypoint.sh:ro
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    environment:
+      - ACTIVE_POOL=${ACTIVE_POOL}
     depends_on:
       - app_blue
       - app_green
-    ports:
-      - "${NGINX_PORT:-8080}:80"
-    environment:
-      - ACTIVE_POOL=${ACTIVE_POOL:-blue}
-      - BLUE_HOST=app_blue:3000
-      - GREEN_HOST=app_green:3000
-    volumes:
-      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
-      - ./nginx-entrypoint.sh:/nginx-entrypoint.sh:ro
-      # share logs with watcher (host path ./logs -> container /var/log/nginx)
-      - ./logs:/var/log/nginx
-    entrypoint: ["/bin/sh", "/nginx-entrypoint.sh"]
-    networks:
-      - app_network
-
-  alert_watcher:
-    image: python:3.11-slim
-    container_name: alert_watcher
-    depends_on:
-      - nginx
-    environment:
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-      - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD:-2}
-      - WINDOW_SIZE=${WINDOW_SIZE:-200}
-      - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC:-300}
-      - MAINTENANCE_MODE=${MAINTENANCE_MODE:-false}
-      - NGINX_LOG_PATH=/var/log/nginx/access.log
-    volumes:
-      - ./logs:/var/log/nginx:ro
-      - ./watcher.py:/watcher.py:ro
-    command: ["python", "/watcher.py"]
     networks:
       - app_network
 
